@@ -7,19 +7,28 @@
 //============================================================================
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <pcap.h>
+#include <iostream>
+#include <string>
 
-void packet_handler(u_char *param, const struct pcap_pkthdr *header, const u_char *pkt_data);
+using namespace std;
+
+
 
 int main(int argc, char *argv[])
-	{
-		char *dev, errbuf[PCAP_ERRBUF_SIZE];
+{
+	string file;
+	pcap_t *dev;
+//	char *dev, errbuf[PCAP_ERRBUF_SIZE];
 
-		dev = pcap_lookupdev(errbuf);
-		if (dev == NULL) {
-			fprintf(stderr, "Couldn't find default device: %s\n", errbuf);
-			return(2);
-		}
-		printf("Device: %s\n", dev);
-		return(0);
+	if (argc > 1) {
+		string file = argv[1];
+		cout << "File listed: " << file << endl;
+	} else {
+		cout << "No pcap file to parse!\n";
+		exit(EXIT_FAILURE);
 	}
+
+	return(0);
+}
