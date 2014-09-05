@@ -74,7 +74,58 @@ struct sniff_tcp {
         u_short th_sum;                 // checksum
         u_short th_urp;                 // urgent pointer
 };
+// Called from print_payload, print in rows of 16 bytes:  offset  hex  ascii
+// 00000   47 45 54 20 2f 20 48 54  54 50 2f 31 2e 31 0d 0a   GET / HTTP/1.1..
+void print_hex_ascii_line(const u_char *payload, int len, int offset) {
+	int i, gap;
+	const u_char *ch;
+	printf("%05d   ", offset);		// offset
+	ch = payload;					// print hex
+	for (i=0; i<len; i++) {
+		printf("%02x ", *ch);
+		ch++;
+		if (i == 7) printf(" ");	// print extra space after 8th byte for visual aid
+	}
+	if (len < 8) printf(" ");		// print space to handle line less than 8 bytes
+	if (len < 16) {					// print hex gap with spaces if not full line
+		gap = 16 - len;
+		for (i=0; i<gap; i++) printf(" ");
+	}
+	printf("   ");
 
+	ch = payload;		// ascii (if printable)
+	for (i=0; i<len; i++) {
+		if (isprint(*ch)) printf("%c", *ch);
+		else printf(".");
+		ch++;
+	}
+	printf("\n");
+}
+// Called from got_packet to print packet payload - don't print binary data
+void print_payload(const u_char *payload, int len) {
+	int len_rem = len;
+	int line_width = 16;		// number of bytes per line
+	int line_len;
+	int offset = 0;				// zero-based offset counter
+	const u_char *ch = payload;
+
+	if (len <= 0) return;		// if no payload, done
+	if (len <= line_width) {	// data fits on one line
+		print_hex_ascii_line(ch, len, offset);
+		return;
+	}
+	for (;;) {					// data spans multiple lines
+		line_len = line_width % len_rem;			// get current line length
+		print_hex_ascii_line(ch, line_len, offset);	// print line
+		len_rem -= line_len;						// get total remaining
+		ch += line_len;								// shift point to remaining bytes to print
+		offset += line_width;						// add offset
+		if (len_rem <= line_width) {	// see if line_width char or less
+			print_hex_ascii_line(ch, len_rem, offset);  // print last line and break
+			break;
+		}
+	}
+}
 // Callback function for pcap_loop call (processing of packet data)
 void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
 	static int counter = 1;					// packet count
@@ -138,8 +189,7 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	//Print payload data; it might be binary, so don't just treat it as a string.
 	if (size_payload > 0) {
 		printf("   Payload (%d bytes):\n", size_payload);
-		//TODO
-		//print_payload(payload, size_payload);
+		print_payload(payload, size_payload);
 	}
 //	if (header->caplen != header->len) printf("Packet mismatch num[%d]", counter);
 //	if (ip->ip_p != IPPROTO_TCP) printf("Not TCP! Packet num[%d]", counter);
