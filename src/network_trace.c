@@ -79,6 +79,10 @@ struct sniff_tcp {
 	u_short th_sum;                 // checksum
 	u_short th_urp;                 // urgent pointer
 };
+void printem(const struct pcap_pkthdr *header, const u_char *packet) {	// Use to print out misc data as needed for evaluation, called at end of got_packet()
+	//printf("	*** ethernet->ether_type: %d\n", );
+}
+
 // Called from print_payload, print in rows of 16 bytes:  offset  hex  ascii
 // 00000   47 45 54 20 2f 20 48 54  54 50 2f 31 2e 31 0d 0a   GET / HTTP/1.1..
 void print_hex_ascii_line(const u_char *payload, int len, int offset) {
@@ -145,7 +149,7 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	int size_tcp;
 	int size_payload;
 
-	printf("Packet [%d] - Length: [%d]:\n", counter, header->len);
+	printf("Packet [%d]\nLength: [%d]:\n", counter, header->len);
 	counter++;
 
 	ethernet = (struct sniff_ethernet*)(packet);
@@ -187,17 +191,16 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	}
 	printf("   Src port: %d\n", ntohs(tcp->th_sport));		// note ntohs converts unsigned short int 'netshort' from network byte order to host byte order
 	printf("   Dst port: %d\n", ntohs(tcp->th_dport));
-	// define/compute tcp payload (segment) offset
-	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
-	// compute tcp payload (segment) size
-	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);
-	//Print payload data; it might be binary, so don't just treat it as a string.
-	if (size_payload > 0) {
+
+	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);	// define/compute tcp payload (segment) offset
+	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);			// compute tcp payload (segment) size
+	if (size_payload > 0) {												//Print payload data; it might be binary, so don't just treat it as a string.
 		printf("   Payload (%d bytes):\n", size_payload);
 		print_payload(payload, size_payload);
 	}
 //	if (header->caplen != header->len) printf("Packet mismatch num[%d]", counter);
 //	if (ip->ip_p != IPPROTO_TCP) printf("Not TCP! Packet num[%d]", counter);
+	printem(header, packet);
 }
 
 int main(int argc, char *argv[])
