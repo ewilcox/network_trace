@@ -24,11 +24,7 @@
 
 #define ETHER_ADDR_LEN 6
 #define SIZE_ETHERNET 14
-
-// Re-assymbly structure
-struct my_packet {
-	//TODO
-};
+//#define DEBUG		// uncomment for debugging print statements
 
 // Ethernet header
 struct sniff_ethernet {
@@ -79,10 +75,36 @@ struct sniff_tcp {
 	u_short th_sum;                 // checksum
 	u_short th_urp;                 // urgent pointer
 };
-void printem(const struct pcap_pkthdr *header, const u_char *packet) {	// Use to print out misc data as needed for evaluation, called at end of got_packet()
-	//printf("	*** ethernet->ether_type: %d\n", );
+// Re-assymbly structure
+struct my_packet {		// Struct for storing packet data
+	unsigned int packet_counter;
+	struct sniff_ethernet *ethernet;
+	struct sniff_ip *ip;
+	struct sniff_tcp *tcp;
+	int size_ip;
+	int size_tcp;
+	int size_payload;
+	struct pcap_pkthdr header;
+	const u_char packet;
+	struct my_packet *next;
+};
+void printem(const struct sniff_ethernet *ethernet, const struct pcap_pkthdr *header, const u_char *packet) {	// Use to print out misc data as needed for evaluation, called at end of got_packet()
+	// TODO ?
 }
-
+void initem(struct my_packet *root) {
+//	root->ethernet = 0;
+//	root->header.caplen = 0;
+//	root->header.len = 0;
+//	root->header.ts.tv_sec = 0;
+//	root->header.ts.tv_usec = 0;
+//	root->ip = 0;
+//	root->packet_counter = 0;
+//	root->size_ip = 0;
+//	root->size_payload = 0;
+//	root->size_tcp = 0;
+//	root->tcp = 0;
+	root->next = NULL;
+}
 // Called from print_payload, print in rows of 16 bytes:  offset  hex  ascii
 // 00000   47 45 54 20 2f 20 48 54  54 50 2f 31 2e 31 0d 0a   GET / HTTP/1.1..
 void print_hex_ascii_line(const u_char *payload, int len, int offset) {
@@ -137,7 +159,20 @@ void print_payload(const u_char *payload, int len) {
 }
 // Callback function for pcap_loop call (processing of packet data)
 void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet) {
+
+	struct my_packet *root = (struct my_packet *) args;
+	struct my_packet *nu;
+	nu = (struct my_packet *) malloc( sizeof(struct my_packet));
+	if (!nu) {
+		printf("Error: Out of Memory\n");
+		return 1;
+	}
+
 	static int counter = 1;					// packet count
+	nu->packet_counter = counter;
+	nu->header.caplen = header->caplen;
+	nu->header.len = header->len;
+	nu->header.ts = header->ts;
 
 	// pointers to packet headers
 	const struct sniff_ethernet *ethernet;	// Ethernet header
@@ -149,19 +184,25 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	int size_tcp;
 	int size_payload;
 
+#ifdef DEBUG
 	printf("Packet [%d]\nLength: [%d]:\n", counter, header->len);
+#endif
 	counter++;
 
+	// leaving assingments same as original (vs nu->ip=ip) to retain option to remove other statements
 	ethernet = (struct sniff_ethernet*)(packet);
+	nu->ethernet = (struct sniff_ethernet*)(packet);
 	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
+	nu->ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
 	size_ip = IP_HL(ip)*4;
+	nu->size_ip = IP_HL(ip)*4;
 	if (size_ip < 20) {
 		printf("   * Invalid IP header length: %u bytes\n", size_ip);
 		return;
 	}
 
-	printf("       From: %s\n", inet_ntoa(ip->ip_src));
-	printf("         To: %s\n", inet_ntoa(ip->ip_dst));
+//	printf("       From: %s\n", inet_ntoa(nu->ip->ip_src));//ip->ip_src));
+//	printf("         To: %s\n", inet_ntoa(nu->ip->ip_dst));//ip->ip_dst));
 
 	// determine protocol
 	switch(ip->ip_p) {
@@ -181,7 +222,7 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 			printf("   Protocol: unknown\n");
 			return;
 	}
-	// Handle packet for TCP, could be in switch above I believe
+	// Handle packet for TCP, could be in switch above I believe?
 	// TCP header offset computation
 	tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
 	size_tcp = TH_OFF(tcp)*4;
@@ -189,22 +230,48 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 		printf("   * Invalid TCP header length: %u bytes\n", size_tcp);
 		return;
 	}
-	printf("   Src port: %d\n", ntohs(tcp->th_sport));		// note ntohs converts unsigned short int 'netshort' from network byte order to host byte order
-	printf("   Dst port: %d\n", ntohs(tcp->th_dport));
+//	printf("   Src port: %d\n", ntohs(tcp->th_sport));		// note ntohs converts unsigned short int 'netshort' from network byte order to host byte order
+//	printf("   Dst port: %d\n", ntohs(tcp->th_dport));
 
 	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);	// define/compute tcp payload (segment) offset
 	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);			// compute tcp payload (segment) size
 	if (size_payload > 0) {												//Print payload data; it might be binary, so don't just treat it as a string.
-		printf("   Payload (%d bytes):\n", size_payload);
-		print_payload(payload, size_payload);
+//		printf("   Payload (%d bytes):\n", size_payload);
+//		print_payload(payload, size_payload);
 	}
 //	if (header->caplen != header->len) printf("Packet mismatch num[%d]", counter);
 //	if (ip->ip_p != IPPROTO_TCP) printf("Not TCP! Packet num[%d]", counter);
-	printem(header, packet);
+	nu->next = NULL;
+	root->next = nu;
+	printf("root [%d]\n",root->packet_counter);
+	printf("nu [%d]\n",nu->packet_counter);
 }
-
+void traverse(struct my_packet *root) {		// traverse the list and print stuff
+	struct my_packet *c = root;
+	printf("Packet number [%d]\n", c->next->packet_counter);
+	if (c->next != NULL) {
+		traverse(c->next);
+	}
+}
+void free_list(struct my_packet *root) {
+	struct my_packet *c;
+	if (c->next != NULL) printf("c->next != NULL\n");
+	else printf("c->next IS== NULL\n");
+	while (root->next != NULL) {
+		c = root;
+		root = root->next;
+		free(c);
+	}
+	if (c->next != NULL) printf("c->next != NULL\n");
+	else printf("c->next IS== NULL\n");
+	free(root);
+}
 int main(int argc, char *argv[])
 {
+	struct my_packet *root = (struct my_packet *)malloc( sizeof(struct my_packet));
+//	root = malloc( sizeof(struct my_packet));
+	root->next = NULL;
+
 	char errbuf[PCAP_ERRBUF_SIZE];
 	pcap_t *handle;					// Session handle
 	// if no pcap file listed in call, print error and quit
@@ -230,9 +297,14 @@ int main(int argc, char *argv[])
 	// Filters not included, want to capture all packets with this
 
 	// -1 to loop until error or end, last argument is additional arguments sent to callback(got_packet)
-	pcap_loop(handle, -1, got_packet, NULL);
+	pcap_loop(handle, -1, got_packet, &root);
 
+	if (root->next == NULL) printf("is null\n");
+	//traverse(root);
+	if (root->next == NULL) printf("is null\n");
 	pcap_close(handle);
+	free_list(root);
+	if (root->next == NULL) printf("is null\n");
 	printf("end of program\n");
 	return 0;
 }
