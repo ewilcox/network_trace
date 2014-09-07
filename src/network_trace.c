@@ -85,14 +85,11 @@ struct sniff_udp {
 };
 // Re-assymbly structure
 struct my_packet {		// Struct for storing packet data
-	u_int type;
 	unsigned int packet_counter;
 	struct sniff_ethernet ethernet;
 	struct sniff_ip ip;
 	struct sniff_tcp tcp;
 	struct sniff_udp udp;
-	in_addr_t ip_src;
-	in_addr_t ip_dst;
 	int size_ip;
 	int size_tcp;
 	int size_payload;
@@ -108,8 +105,6 @@ void initem(struct my_packet *root) {	// init root node just in case
 	root->header.len = 0;
 	root->header.ts.tv_sec = 0;
 	root->header.ts.tv_usec = 0;
-	root->ip_src = 0;
-	root->ip_dst = 0;
 	root->packet_counter = 0;
 	root->size_ip = 0;
 	root->size_payload = 0;
@@ -210,7 +205,6 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 #endif
 	counter++;
 
-	// leaving assingments same as original (vs nu->ip=ip) to retain option to remove other statements
 	ethernet = (struct sniff_ethernet*)(packet);
 	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
 	size_ip = IP_HL(ip)*4;
@@ -221,18 +215,16 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 		printf("   * Invalid IP header length: %u bytes, packet number [%d]\n", size_ip, counter);
 		return;
 	}
-	//TODO Print all packet data to file so can see it to compare?
-	// determine protocol & print it
-	switch(ip->ip_p) {			// matching from enum types listed in in.h
-		case IPPROTO_TCP:
-			nu->type = 6;		// 6 for TCP
 #ifdef DEBUG
-			printf("Packet [%d]  nu->Source: %s  ", nu->packet_counter, inet_ntoa(nu->ip->ip_src));
-			printf("Packet [%d]  nu->Desitination: %s\n", nu->packet_counter, inet_ntoa(nu->ip->ip_dst));
+			printf("Packet [%d]  nu->Source: %s  ", nu->packet_counter, inet_ntoa(nu->ip.ip_src));
+			printf("Packet [%d]  nu->Desitination: %s\n", nu->packet_counter, inet_ntoa(nu->ip.ip_dst));
 			printf("             ip->From: %s   ", inet_ntoa(ip->ip_src));
 			printf("     ip->  To: %s\n", inet_ntoa(ip->ip_dst));
 #endif
-			// Handle packet for TCP, could be in switch above maybe?
+	//TODO Print all packet data to file so can see it to compare?
+	// determine protocol & print it
+	switch(ip->ip_p) {			// matching from enum types listed in in.h
+		case IPPROTO_TCP:		// 6 for TCP
 			// TCP header offset computation
 			tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
 			size_tcp = TH_OFF(tcp)*4;
@@ -258,9 +250,9 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 			}
 #endif
 			break;
-		case IPPROTO_UDP:
-			nu->type = 17;		// 17 for UDP
-			printf("from port [%i] to [%i]\n", udp->uh_sport, udp->uh_dport);  // TODO any better port printing here?  still aren't coming out right
+		case IPPROTO_UDP:		// 17 for UDP
+			//TODO port still showing up incorrectly
+			printf("UDP packet - from port [%i] to [%i]\n", ntohs(udp->uh_sport), ntohs(udp->uh_dport));
 			udp = (struct sniff_udp *)(packet + SIZE_ETHERNET + SIZE_UDP);
 			payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + SIZE_UDP);
 			size_payload = ntohs(ip->ip_len) - (size_ip + SIZE_UDP);
@@ -270,25 +262,20 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 			if (nu->size_payload > ntohs(nu->udp.uh_len))
 				nu->size_payload = ntohs(nu->udp.uh_len);
 #ifdef DEBUG
-			printf("   Src port: %d\n", ntohs(udp->uh_sport));
-			printf("   Dst port: %d\n", ntohs(udp->uh_dport));
 			if (size_payload > 0) {
 				printf("   Payload (%d bytes):\n", size_payload);
 				print_payload(payload, size_payload);
 			}
 #endif
 			break;
-		case IPPROTO_ICMP:
-			nu->type = 1;		// 1 for ICMP
-			printf("   Protocol: ICMP\n");
+		case IPPROTO_ICMP:		// 1 for ICMP
+			printf("   Protocol: ICMP  -  no storage/reconstruction implemented for this program\n");
 			return;
-		case IPPROTO_IP:
-			nu->type = 0;		// 0 for IP
-			printf("   Protocol: IP\n");
+		case IPPROTO_IP:		// 0 for IP
+			printf("   Protocol: IP  -  no storage/reconstruction implemented for this program\n");
 			return;
-		default:
-			nu->type = 255;		// 255 for unknown - listed as RAW packets under in.h numbering
-			printf("   Protocol: unknown\n");
+		default:				// 255 for unknown - listed as RAW packets under in.h numbering
+			printf("   Protocol: unknown  -  no storage/reconstruction implemented for this program\n");
 			return;
 	}
 	insert_list(root,nu);
@@ -300,11 +287,11 @@ void traverse(struct my_packet *root) {		// traverse the list and print stuff
 		c = c->next;
 		printf("Packet [%d]  Source: %s  ", c->packet_counter, inet_ntoa(c->ip.ip_src));
 		printf("Destination: %s  ", inet_ntoa(c->ip.ip_dst));
-		if (c->type == 6) {
+		if (c->ip.ip_p == IPPROTO_TCP) {
 			printf("From port [%i] to [%i]  ", ntohs(c->tcp.th_sport), ntohs(c->tcp.th_dport));
 			printf("len: %d, id: %i, offset: %i\n", ntohs(c->ip.ip_len), ntohs(c->ip.ip_id), ntohs(c->ip.ip_off));
 		}
-		else if (c->type == 17)
+		else if (c->ip.ip_p == IPPROTO_UDP)
 			printf("From port [%i]  To Port [%i]\n", (c->udp.uh_sport), ntohs(c->udp.uh_dport));
 		else
 			printf("No ports, isn't tcp or udp packet we're looking at");
