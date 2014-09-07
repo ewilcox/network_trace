@@ -24,6 +24,7 @@
 
 #define ETHER_ADDR_LEN 6
 #define SIZE_ETHERNET 14
+#define SIZE_UDP 8
 //#define DEBUG		// uncomment for debugging print statements
 //#define DEBUGPAYLOAD
 
@@ -76,6 +77,12 @@ struct sniff_tcp {
 	u_short th_sum;                 // checksum
 	u_short th_urp;                 // urgent pointer
 };
+struct sniff_udp {
+	u_short uh_src;		// source port
+	u_short uh_dst;		// destination port
+	u_short uh_len;		// length
+	u_short uh_sum;		// checksum
+};
 // Re-assymbly structure
 struct my_packet {		// Struct for storing packet data
 	u_int type;
@@ -83,6 +90,7 @@ struct my_packet {		// Struct for storing packet data
 	struct sniff_ethernet *ethernet;
 	struct sniff_ip *ip;
 	struct sniff_tcp *tcp;
+	struct sniff_udp *udp;
 	in_addr_t ip_src;
 	in_addr_t ip_dst;
 	int size_ip;
@@ -191,10 +199,12 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	const struct sniff_ethernet *ethernet;	// Ethernet header
 	const struct sniff_ip *ip;				// IP header
 	const struct sniff_tcp *tcp;			// TCP header
+	const struct sniff_udp *udp;			// UDP header
 	const char *payload;					// Packet payload
 
 	int size_ip;
 	int size_tcp;
+	int size_udp;
 	int size_payload;
 
 #ifdef DEBUG
@@ -215,23 +225,41 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	}
 	nu->ip_src = ip->ip_src.s_addr;
 	nu->ip_dst = ip->ip_dst.s_addr;
-	switch(ip->ip_p) {
+	// determine protocol & print it
+	switch(ip->ip_p) {			// matching from enum types listed in in.h
 		case IPPROTO_TCP:
-			nu->type = 1;		// 1 for TCP
+			nu->type = 6;		// 6 for TCP
 			break;
 		case IPPROTO_UDP:
-			nu->type = 2;		// 2 for UDP
+			nu->type = 17;		// 17 for UDP
+			udp = (struct sniff_udp *)(packet + SIZE_ETHERNET + SIZE_UDP);
+			nu->udp = (struct sniff_udp *)(packet + SIZE_ETHERNET + SIZE_UDP);
+			payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + SIZE_UDP);
+			nu->payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + SIZE_UDP);
+			size_payload = ntohs(ip->ip_len) - (size_ip + SIZE_UDP);
+			nu->size_payload = ntohs(ip->ip_len) - (size_ip + SIZE_UDP);
+			if (nu->size_payload > ntohs(nu->udp->uh_len))
+				nu->size_payload = ntohs(nu->udp->uh_len);
+#ifdef DEBUG
+			printf("   Src port: %d\n", ntohs(udp->uh_src));
+			printf("   Dst port: %d\n", ntohs(udp->uh_dst));
+			if (size_payload > 0) {
+				printf("   Payload (%d bytes):\n", size_payload);
+				print_payload(payload, size_payload);
+			}
+#endif
+			insert_list(root,nu);
 			return;
 		case IPPROTO_ICMP:
-			nu->type = 3;		// 3 for ICMP
+			nu->type = 1;		// 1 for ICMP
 			printf("   Protocol: ICMP\n");
 			return;
 		case IPPROTO_IP:
-			nu->type = 4;		// 4 for IP
+			nu->type = 0;		// 0 for IP
 			printf("   Protocol: IP\n");
 			return;
 		default:
-			nu->type = 5;		// 5 for unknown
+			nu->type = 255;		// 255 for unknown - listed as RAW packets under in.h numbering
 			printf("   Protocol: unknown\n");
 			return;
 	}
@@ -240,7 +268,6 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	printf("Packet [%d]  nu->Desitination: %s\n", nu->packet_counter, inet_ntoa(nu->ip->ip_dst));
 	printf("             ip->From: %s   ", inet_ntoa(ip->ip_src));
 	printf("     ip->  To: %s\n", inet_ntoa(ip->ip_dst));
-	// determine protocol & print it
 #endif
 	// Handle packet for TCP, could be in switch above maybe?
 	// TCP header offset computation
@@ -274,7 +301,6 @@ void traverse(struct my_packet *root) {		// traverse the list and print stuff
 	struct my_packet *c = root;
 	if (c->next != NULL) {
 		c = c->next;
-
 		printf("Packet [%d]  Source: %s  ", c->packet_counter, inet_ntoa(c->ip_src));
 		printf("Packet [%d]  Destination: %s\n", c->packet_counter, inet_ntoa(c->ip_dst));
 		//printf("    type: %hd	", (c->ethernet->ether_type));
