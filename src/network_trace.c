@@ -25,6 +25,7 @@
 #define ETHER_ADDR_LEN 6
 #define SIZE_ETHERNET 14
 //#define DEBUG		// uncomment for debugging print statements
+//#define DEBUGPAYLOAD
 
 // Ethernet header
 struct sniff_ethernet {
@@ -77,14 +78,17 @@ struct sniff_tcp {
 };
 // Re-assymbly structure
 struct my_packet {		// Struct for storing packet data
+	u_int type;
 	unsigned int packet_counter;
 	struct sniff_ethernet *ethernet;
 	struct sniff_ip *ip;
 	struct sniff_tcp *tcp;
+	in_addr_t ip_src;
+	in_addr_t ip_dst;
 	int size_ip;
 	int size_tcp;
 	int size_payload;
-	struct pcap_pkthdr *header;
+	struct pcap_pkthdr header;
 	u_char *payload;
 	struct my_packet *next;
 };
@@ -93,11 +97,12 @@ void printem(const struct sniff_ethernet *ethernet, const struct pcap_pkthdr *he
 }
 void initem(struct my_packet *root) {	// init root node just in case
 	root->ethernet = 0;
-//	root->header.caplen = 0;
-//	root->header.len = 0;
-//	root->header.ts.tv_sec = 0;
-//	root->header.ts.tv_usec = 0;
-	root->ip = 0;
+	root->header.caplen = 0;
+	root->header.len = 0;
+	root->header.ts.tv_sec = 0;
+	root->header.ts.tv_usec = 0;
+	root->ip_src = 0;
+	root->ip_dst = 0;
 	root->packet_counter = 0;
 	root->size_ip = 0;
 	root->size_payload = 0;
@@ -178,9 +183,9 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 
 	static int counter = 1;					// packet count
 	nu->packet_counter = counter;
-//	nu->header.caplen = header->caplen;
-//	nu->header.len = header->len;
-//	nu->header.ts = header->ts;
+	nu->header.caplen = header->caplen;
+	nu->header.len = header->len;
+	nu->header.ts = header->ts;
 
 	// pointers to packet headers
 	const struct sniff_ethernet *ethernet;	// Ethernet header
@@ -208,29 +213,34 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 		printf("   * Invalid IP header length: %u bytes, packet number [%d]\n", size_ip, counter);
 		return;
 	}
-#ifdef DEBUG
-	printf("Packet [%d]  Source: %s  ", nu->packet_counter, inet_ntoa(nu->ip->ip_src));
-	printf("Packet [%d]  Desitination: %s\n", nu->packet_counter, inet_ntoa(nu->ip->ip_dst));
-	printf("       From: %s\n", inet_ntoa(ip->ip_src));
-	printf("         To: %s\n", inet_ntoa(ip->ip_dst));
-	// determine protocol & print it
+	nu->ip_src = ip->ip_src.s_addr;
+	nu->ip_dst = ip->ip_dst.s_addr;
 	switch(ip->ip_p) {
 		case IPPROTO_TCP:
-			printf("   Protocol: TCP\n");
+			nu->type = 1;		// 1 for TCP
 			break;
 		case IPPROTO_UDP:
-			printf("   Protocol: UDP\n");
+			nu->type = 2;		// 2 for UDP
 			return;
 		case IPPROTO_ICMP:
+			nu->type = 3;		// 3 for ICMP
 			printf("   Protocol: ICMP\n");
 			return;
 		case IPPROTO_IP:
+			nu->type = 4;		// 4 for IP
 			printf("   Protocol: IP\n");
 			return;
 		default:
+			nu->type = 5;		// 5 for unknown
 			printf("   Protocol: unknown\n");
 			return;
 	}
+#ifdef DEBUG
+	printf("Packet [%d]  nu->Source: %s  ", nu->packet_counter, inet_ntoa(nu->ip->ip_src));
+	printf("Packet [%d]  nu->Desitination: %s\n", nu->packet_counter, inet_ntoa(nu->ip->ip_dst));
+	printf("             ip->From: %s   ", inet_ntoa(ip->ip_src));
+	printf("     ip->  To: %s\n", inet_ntoa(ip->ip_dst));
+	// determine protocol & print it
 #endif
 	// Handle packet for TCP, could be in switch above maybe?
 	// TCP header offset computation
@@ -251,13 +261,12 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	nu->payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
 	nu->size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);
 
-#ifdef DEBUG
+#ifdef DEBUGPAYLOAD
 	if (size_payload > 0) {												//Print payload data; it might be binary, so don't just treat it as a string.
 		printf("   Payload (%d bytes):\n", size_payload);
 		print_payload(payload, size_payload);
 	}
 #endif
-	//printf("tcp_ack: %s\n", ntohl(nu->tcp->th_ack));
 	insert_list(root,nu);
 }
 
@@ -265,10 +274,10 @@ void traverse(struct my_packet *root) {		// traverse the list and print stuff
 	struct my_packet *c = root;
 	if (c->next != NULL) {
 		c = c->next;
-		printf("Packet [%d]  Source: %s  ", c->packet_counter, inet_ntoa(c->ip->ip_src));
-		printf("Packet [%d]  Destination: %s\n", c->packet_counter, inet_ntoa(c->ip->ip_dst));
-		//printf("    type: %hd	", (c->ethernet->ether_type));
 
+		printf("Packet [%d]  Source: %s  ", c->packet_counter, inet_ntoa(c->ip_src));
+		printf("Packet [%d]  Destination: %s\n", c->packet_counter, inet_ntoa(c->ip_dst));
+		//printf("    type: %hd	", (c->ethernet->ether_type));
 		traverse(c);
 	}
 }
