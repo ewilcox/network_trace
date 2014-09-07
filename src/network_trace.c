@@ -111,7 +111,6 @@ void insert_list(struct my_packet *root, struct my_packet *nu) {
 	while(c->next != NULL) c = c->next;
 	nu->next = NULL;
 	c->next = nu;
-	//free(c);		// this one ok?
 }
 // Called from print_payload, print in rows of 16 bytes:  offset  hex  ascii
 // 00000   47 45 54 20 2f 20 48 54  54 50 2f 31 2e 31 0d 0a   GET / HTTP/1.1..
@@ -208,7 +207,6 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 		printf("   * Invalid IP header length: %u bytes, packet number [%d]\n", size_ip, counter);
 		return;
 	}
-//TODO Stopped here on my_packet assignments (commented out prints though for traverse()
 #ifdef DEBUG
 	printf("       From: %s\n", inet_ntoa(ip->ip_src));
 	printf("         To: %s\n", inet_ntoa(ip->ip_dst));
@@ -234,6 +232,7 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	// Handle packet for TCP, could be in switch above maybe?
 	// TCP header offset computation
 	tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
+	nu->tcp = TH_OFF(tcp)*4;
 	size_tcp = TH_OFF(tcp)*4;
 	if (size_tcp < 20) {
 		printf("   * Invalid TCP header length: %u bytes packet number [%d]\n", size_tcp, counter);
@@ -245,6 +244,7 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 #endif
 	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);	// define/compute tcp payload (segment) offset
 	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);			// compute tcp payload (segment) size
+
 #ifdef DEBUG
 	if (size_payload > 0) {												//Print payload data; it might be binary, so don't just treat it as a string.
 		printf("   Payload (%d bytes):\n", size_payload);
@@ -258,19 +258,18 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 
 void traverse(struct my_packet *root) {		// traverse the list and print stuff
 	struct my_packet *c = root;
-	printf("Packet number [%d]\n", c->next->packet_counter);
 	if (c->next != NULL) {
+		printf("Packet number [%d]\n", c->next->packet_counter);
 		traverse(c->next);
 	}
 }
 void free_list(struct my_packet *root) {
-	printf("calling free_list()...");
-	struct my_packet *c = root;
+	struct my_packet *c;
 	while (c->next != NULL) {
+		c = root;
 		root = c->next;
 		free(c);
 	}
-	printf(" ...returning from free_list()\n");
 }
 int main(int argc, char *argv[])
 {
@@ -308,7 +307,8 @@ int main(int argc, char *argv[])
 	traverse(root);
 
 	pcap_close(handle);
+
 	free_list(root);
-	printf("end of program\n");
+	printf("Program Complete\n");
 	return 0;
 }
