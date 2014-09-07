@@ -252,7 +252,7 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 			break;
 		case IPPROTO_UDP:		// 17 for UDP
 			//TODO port still showing up incorrectly
-			printf("UDP packet - from port [%i] to [%i]\n", ntohs(udp->uh_sport), ntohs(udp->uh_dport));
+			printf("UDP packet [%d] from port [%i] to [%i], len: [%d], sum: [%d]\n", nu->packet_counter, ntohs(udp->uh_sport), ntohs(udp->uh_dport), ntohs(udp->uh_len), ntohs(udp->uh_sum));
 			udp = (struct sniff_udp *)(packet + SIZE_ETHERNET + SIZE_UDP);
 			payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + SIZE_UDP);
 			size_payload = ntohs(ip->ip_len) - (size_ip + SIZE_UDP);
@@ -292,10 +292,11 @@ void traverse(struct my_packet *root) {		// traverse the list and print stuff
 			printf("len: %d, id: %i, offset: %i\n", ntohs(c->ip.ip_len), ntohs(c->ip.ip_id), ntohs(c->ip.ip_off));
 		}
 		else if (c->ip.ip_p == IPPROTO_UDP)
-			printf("From port [%i]  To Port [%i]\n", (c->udp.uh_sport), ntohs(c->udp.uh_dport));
+			printf("From port [%i]  To Port [%i]\n", ntohs(c->udp.uh_sport), ntohs(c->udp.uh_dport));
 		else
 			printf("No ports, isn't tcp or udp packet we're looking at");
-		//printf("    type: %hd	", (c->ethernet->ether_type));
+		//printf("  ip ack: %d  ", ntohs(c->ip.ip_vhl));
+		//printf("    ethernet type: %d\n", ntohs(c->ethernet.ether_type));
 		traverse(c);
 	}
 }
