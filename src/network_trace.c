@@ -85,24 +85,25 @@ struct my_packet {		// Struct for storing packet data
 	int size_tcp;
 	int size_payload;
 	struct pcap_pkthdr header;
-	const u_char packet;
+	u_char payload;
 	struct my_packet *next;
 };
 void printem(const struct sniff_ethernet *ethernet, const struct pcap_pkthdr *header, const u_char *packet) {	// Use to print out misc data as needed for evaluation, called at end of got_packet()
 	// TODO ?
 }
-void initem(struct my_packet *root) {
-//	root->ethernet = 0;
-//	root->header.caplen = 0;
-//	root->header.len = 0;
-//	root->header.ts.tv_sec = 0;
-//	root->header.ts.tv_usec = 0;
-//	root->ip = 0;
-//	root->packet_counter = 0;
-//	root->size_ip = 0;
-//	root->size_payload = 0;
-//	root->size_tcp = 0;
-//	root->tcp = 0;
+void initem(struct my_packet *root) {	// init root node just in case
+	root->ethernet = 0;
+	root->header.caplen = 0;
+	root->header.len = 0;
+	root->header.ts.tv_sec = 0;
+	root->header.ts.tv_usec = 0;
+	root->ip = 0;
+	root->packet_counter = 0;
+	root->size_ip = 0;
+	root->size_payload = 0;
+	root->payload = 0;
+	root->size_tcp = 0;
+	root->tcp = 0;
 	root->next = NULL;
 }
 void insert_list(struct my_packet *root, struct my_packet *nu) {
@@ -198,10 +199,10 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 
 	// leaving assingments same as original (vs nu->ip=ip) to retain option to remove other statements
 	ethernet = (struct sniff_ethernet*)(packet);
-	nu->ethernet = (struct sniff_ethernet*)(packet);
 	ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
-	nu->ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
 	size_ip = IP_HL(ip)*4;
+	nu->ethernet = (struct sniff_ethernet*)(packet);
+	nu->ip = (struct sniff_ip*)(packet + SIZE_ETHERNET);
 	nu->size_ip = IP_HL(ip)*4;
 	if (size_ip < 20) {
 		printf("   * Invalid IP header length: %u bytes, packet number [%d]\n", size_ip, counter);
@@ -232,8 +233,9 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	// Handle packet for TCP, could be in switch above maybe?
 	// TCP header offset computation
 	tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
-	nu->tcp = TH_OFF(tcp)*4;
 	size_tcp = TH_OFF(tcp)*4;
+	nu->tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + size_ip);
+	nu->size_tcp = TH_OFF(tcp)*4;
 	if (size_tcp < 20) {
 		printf("   * Invalid TCP header length: %u bytes packet number [%d]\n", size_tcp, counter);
 		return;
@@ -243,7 +245,9 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	printf("   Dst port: %d\n", ntohs(tcp->th_dport));
 #endif
 	payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);	// define/compute tcp payload (segment) offset
-	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);			// compute tcp payload (segment) size
+	nu->payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
+	size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);			// compute tcp payload (segment) size / byte order conversion
+	nu->size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);
 
 #ifdef DEBUG
 	if (size_payload > 0) {												//Print payload data; it might be binary, so don't just treat it as a string.
@@ -251,8 +255,6 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 		print_payload(payload, size_payload);
 	}
 #endif
-	if (header->caplen != header->len) printf("Packet mismatch num[%d]", counter);
-	if (ip->ip_p != IPPROTO_TCP) printf("Not TCP! Packet num[%d]", counter);	// double checks TCP packet, UDP falls in where? (there is one)
 	insert_list(root,nu);
 }
 
