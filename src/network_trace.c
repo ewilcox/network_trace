@@ -78,10 +78,10 @@ struct sniff_tcp {
 	u_short th_urp;                 // urgent pointer
 };
 struct sniff_udp {
-	u_short uh_src;		// source port
-	u_short uh_dst;		// destination port
-	u_short uh_len;		// length
-	u_short uh_sum;		// checksum
+	u_short uh_sport;		// source port
+	u_short uh_dport;		// destination port
+	u_short uh_len;			// length
+	u_short uh_sum;			// checksum
 };
 // Re-assymbly structure
 struct my_packet {		// Struct for storing packet data
@@ -223,6 +223,8 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 		printf("   * Invalid IP header length: %u bytes, packet number [%d]\n", size_ip, counter);
 		return;
 	}
+	printf("*** id %i ***\n",ntohs(nu->ip->ip_id));	//TODO  this is printing the right number I think
+	//TODO rethink data input? use id, and flags (syn & ack with port and dest to organize?)  Print all packet data to file so can see it to compare?
 	nu->ip_src = ip->ip_src.s_addr;
 	nu->ip_dst = ip->ip_dst.s_addr;
 	// determine protocol & print it
@@ -232,6 +234,7 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 			break;
 		case IPPROTO_UDP:
 			nu->type = 17;		// 17 for UDP
+			printf("from port [%i] to [%i]\n", udp->uh_sport, udp->uh_dport);  // TODO any better port printing here?  still aren't coming out right
 			udp = (struct sniff_udp *)(packet + SIZE_ETHERNET + SIZE_UDP);
 			nu->udp = (struct sniff_udp *)(packet + SIZE_ETHERNET + SIZE_UDP);
 			payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + SIZE_UDP);
@@ -241,8 +244,8 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 			if (nu->size_payload > ntohs(nu->udp->uh_len))
 				nu->size_payload = ntohs(nu->udp->uh_len);
 #ifdef DEBUG
-			printf("   Src port: %d\n", ntohs(udp->uh_src));
-			printf("   Dst port: %d\n", ntohs(udp->uh_dst));
+			printf("   Src port: %d\n", ntohs(udp->uh_sport));
+			printf("   Dst port: %d\n", ntohs(udp->uh_dport));
 			if (size_payload > 0) {
 				printf("   Payload (%d bytes):\n", size_payload);
 				print_payload(payload, size_payload);
@@ -302,7 +305,15 @@ void traverse(struct my_packet *root) {		// traverse the list and print stuff
 	if (c->next != NULL) {
 		c = c->next;
 		printf("Packet [%d]  Source: %s  ", c->packet_counter, inet_ntoa(c->ip_src));
-		printf("Packet [%d]  Destination: %s\n", c->packet_counter, inet_ntoa(c->ip_dst));
+		printf("Destination: %s  ", inet_ntoa(c->ip_dst));
+		if (c->type == 6) {
+			printf("From port [%i] to [%i]  ", ntohs(c->tcp->th_sport), ntohs(c->tcp->th_dport));
+			printf("len: %d, id: %i, offset: %i\n", ntohs(c->ip->ip_len), ntohs(c->ip->ip_id), ntohs(c->ip->ip_off));
+		}
+		else if (c->type == 17)
+			printf("From port [%i]  To Port [%i]\n", (c->udp->uh_sport), ntohs(c->udp->uh_dport));
+		else
+			printf("No ports, isn't tcp or udp packet we're looking at");
 		//printf("    type: %hd	", (c->ethernet->ether_type));
 		traverse(c);
 	}
