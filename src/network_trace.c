@@ -234,15 +234,12 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 				printf("   * Invalid TCP header length: %u bytes packet number [%d]\n", size_tcp, counter);
 				return;
 			}
+			payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);	// define/compute tcp payload (segment) offset
+			size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);			// compute tcp payload (segment) size / byte order conversion
 #ifdef DEBUG
 			printf("   Src port: %d\n", ntohs(tcp->th_sport));		// note ntohs converts unsigned short int 'netshort' from network byte order to host byte order
 			printf("   Dst port: %d\n", ntohs(tcp->th_dport));
 #endif
-			payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);	// define/compute tcp payload (segment) offset
-			size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);			// compute tcp payload (segment) size / byte order conversion
-			nu->payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + size_tcp);
-			nu->size_payload = ntohs(ip->ip_len) - (size_ip + size_tcp);
-
 #ifdef DEBUGPAYLOAD
 			if (size_payload > 0) {												//Print payload data; it might be binary, so don't just treat it as a string.
 				printf("   Payload (%d bytes):\n", size_payload);
@@ -256,11 +253,8 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 			udp = (struct sniff_udp *)(packet + SIZE_ETHERNET + SIZE_UDP);
 			payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + SIZE_UDP);
 			size_payload = ntohs(ip->ip_len) - (size_ip + SIZE_UDP);
-			nu->udp = *udp;
-			nu->payload = *payload;
-			nu->size_payload = size_payload;
-			if (nu->size_payload > ntohs(nu->udp.uh_len))
-				nu->size_payload = ntohs(nu->udp.uh_len);
+			if (size_payload > ntohs(udp->uh_len))
+				size_payload = ntohs(udp->uh_len);
 #ifdef DEBUG
 			if (size_payload > 0) {
 				printf("   Payload (%d bytes):\n", size_payload);
@@ -278,6 +272,8 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 			printf("   Protocol: unknown  -  no storage/reconstruction implemented for this program\n");
 			return;
 	}
+	nu->payload = *payload;
+	nu->size_payload = size_payload;
 	insert_list(root,nu);
 }
 
@@ -289,14 +285,16 @@ void traverse(struct my_packet *root) {		// traverse the list and print stuff
 		printf("Destination: %s  ", inet_ntoa(c->ip.ip_dst));
 		if (c->ip.ip_p == IPPROTO_TCP) {
 			printf("From port [%i] to [%i]  ", ntohs(c->tcp.th_sport), ntohs(c->tcp.th_dport));
-			printf("len: %d, id: %i, offset: %i\n", ntohs(c->ip.ip_len), ntohs(c->ip.ip_id), ntohs(c->ip.ip_off));
+			printf("ip.len: %d, ip.id: %i, ip.offset: %i", ntohs(c->ip.ip_len), ntohs(c->ip.ip_id), ntohs(c->ip.ip_off));
 		}
 		else if (c->ip.ip_p == IPPROTO_UDP)
-			printf("From port [%i]  To Port [%i]\n", ntohs(c->udp.uh_sport), ntohs(c->udp.uh_dport));
+			printf("From port [%i]  To Port [%i]", ntohs(c->udp.uh_sport), ntohs(c->udp.uh_dport));
 		else
 			printf("No ports, isn't tcp or udp packet we're looking at");
-		//printf("  ip ack: %d  ", ntohs(c->ip.ip_vhl));
-		//printf("    ethernet type: %d\n", ntohs(c->ethernet.ether_type));
+		printf(" tcp.ack: [%d] tcp.seq [%d]", ntohs(c->tcp.th_ack), ntohs(c->tcp.th_seq));
+		printf(" tcp.flags[%d] tcp.off [%d] packet_size [%d]", ntohs(c->tcp.th_flags), ntohs(c->tcp.th_offx2), c->size_payload);
+		print_payload(&c->payload, c->size_payload);
+		printf("\n");
 		traverse(c);
 	}
 }
