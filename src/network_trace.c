@@ -121,33 +121,36 @@ void print_one(struct my_packet *c) {
 	printf("len [%d] seq+len [%d] ", c->size_payload, ntohs(c->tcp.th_seq)+c->size_payload);
 	printf("sum [%d] \n", ntohs(c->tcp.th_sum));
 }
+// check for duplicate packet
+int duplicate (struct my_packet *root, struct my_packet *nu) {
+	struct my_packet *c = root;
+	if (emptylist(c)) return 0;
+	while (c->next == NULL) {
+		print_one(c);
+		print_one(nu);
+		if (ntohl(c->tcp.th_seq) == ntohl(nu->tcp.th_seq) && ntohl(c->tcp.th_ack) == ntohl(nu->tcp.th_ack))	return 1;
+		else c = c->next;
+	}
+	return 0;
+}
 void insert_list(struct my_packet *root, struct my_packet *nu) {
 	//TODO Search for correct place to put packet for reassymbly
 	struct my_packet *c = root;
-	struct my_packet *place;
 	unsigned long seq = ntohl(nu->tcp.th_seq);
-	unsigned long len = ntohl(nu->size_payload);
-	unsigned long next = seq+len;
-
-	printf("searching to place packet [%d] ... ", nu->packet_counter);
-
 	if (!emptylist(root) && ntohl(nu->size_payload > 0)) {
 		while ((ntohl(c->tcp.th_seq) + c->size_payload) != seq && c->next != NULL) {
 			c = c->next;
 		}
 		if (c->next == NULL) {
-			printf("inserting packet [%d] at end 1\n", nu->packet_counter);
 			nu->next = NULL;
 			c->next = nu;
 		}
 		else {
-			printf("inserting packet [%d] \n", nu->packet_counter);
 			nu->next = c->next;
 			c->next = nu;
 		}
 	}
 	else {
-		printf("inserting packet [%d] at end 2\n", nu->packet_counter);
 		while (c->next != NULL) c = c->next;
 		nu->next = NULL;
 		c->next = nu;
@@ -334,7 +337,7 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	nu->payload = malloc(size_payload);
 	if (size_payload > 0) strcpy(nu->payload, payload);
 	nu->size_payload = size_payload;
-	insert_list(root,nu);
+	if (!duplicate(root,nu)) insert_list(root,nu);
 }
 // Print data of specific packet number for troubleshooting purposes
 void print_packet(struct my_packet *root, unsigned int packet_number) {
