@@ -343,7 +343,7 @@ void traverse(struct my_packet *root) {		// traverse the list and print stuff
 				printf("packet [%d] tcp.seq [%d] tcp.ack [%d] ", c->packet_counter, ntohs(c->tcp.th_seq),
 						ntohs(c->tcp.th_ack));
 				printf("len [%d] seq+len [%d] ", c->size_payload, ntohs(c->tcp.th_seq)+c->size_payload);
-				printf("sum [%d] \n", ntohs(~c->tcp.th_sum));
+				printf("sum [%d] flags [%02x] \n", ntohs(c->tcp.th_sum), c->tcp.th_flags);
 
 				if (inet_ntoa(c->ip.ip_src) != inet_ntoa(last->ip.ip_src)) {
 					printf("TCP Communication from source [%s] ",inet_ntoa(c->ip.ip_src));
