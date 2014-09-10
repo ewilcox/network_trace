@@ -27,6 +27,7 @@
 #define SIZE_UDP 8
 //#define DEBUG		// uncomment for debugging print statements
 //#define DEBUGPAYLOAD
+//#define DEBUGPRINT
 
 // Ethernet header
 struct sniff_ethernet {
