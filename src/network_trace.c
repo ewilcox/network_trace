@@ -1,7 +1,7 @@
 //============================================================================
 // Name        : network_trace.c
 // Author      : Eric Wilcox (addition sources citation listed below)
-// Version     : 1.0
+// Version     : 1.0 (version work at github.com/ewilcox/network_trace)
 // Copyright   : Advanced Network & Security course development homework (1)
 //					project at Texas A&M University.
 //					Majority of beginning code by Tim Carstens at tcpdump.org
@@ -25,7 +25,7 @@
 #define ETHER_ADDR_LEN 6
 #define SIZE_ETHERNET 14
 #define SIZE_UDP 8
-//#define DEBUG		// uncomment for debugging print statements
+#define DEBUG		// uncomment for debugging print statements
 //#define DEBUGPAYLOAD
 //#define DEBUGPRINT
 
@@ -421,7 +421,7 @@ void free_list(struct my_packet *root) {
 }
 int main(int argc, char *argv[])
 {
-	fp = fopen("hw1_output.txt", "w");
+	fp = fopen("eric_wilcox-hw1-output.txt", "w");
 	struct my_packet *root = (struct my_packet *)malloc( sizeof(struct my_packet));
 	initem(root);
 	last_ack = 0;
