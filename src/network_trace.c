@@ -98,11 +98,9 @@ struct my_packet {		// Struct for storing packet data
 	u_char *payload;
 	struct my_packet *next;
 };
-struct data_struct {
-	unsigned long length;
-	u_char *data;
-	struct data_struct *next;
-};
+unsigned long last_ack;
+FILE *fp;
+
 void initem(struct my_packet *root) {	// init root node just in case
 	root->header.caplen = 0;
 	root->header.len = 0;
@@ -137,7 +135,6 @@ int duplicate (struct my_packet *root, struct my_packet *nu) {
 	return 0;
 }
 void insert_list(struct my_packet *root, struct my_packet *nu) {
-	//TODO Search for correct place to put packet for reassymbly
 	struct my_packet *c = root;
 	unsigned long seq = ntohl(nu->tcp.th_seq);
 	if (!emptylist(root) && ntohl(nu->size_payload > 0)) {
@@ -179,11 +176,11 @@ void print_hex_ascii_line(const u_char *payload, int len, int offset) {
 	printf("   ");
 	ch = payload;		// ascii (if printable)
 	for (i=0; i<len; i++) {
-		if (isprint(*ch)) printf("%c", *ch);
+		if (isprint(*ch)) fprintf(fp,"%c", *ch);
 		//else printf(".");
 		ch++;
 	}
-	printf("\n");
+	fprintf(fp,"\n");
 }
 // Called from got_packet to print packet payload - don't print binary data
 void printem(const u_char *payload, int len) {
@@ -338,7 +335,9 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 			return;
 	}
 	nu->payload = malloc(size_payload);
-	if (size_payload > 0) strcpy(nu->payload, payload);
+	if (size_payload > 0) {
+		strcpy(nu->payload, payload);
+	}
 	nu->size_payload = size_payload;
 	if (!duplicate(root,nu)) insert_list(root,nu);
 }
@@ -350,9 +349,9 @@ void print_packet(struct my_packet *root, unsigned int packet_number) {
 		printf("\nPacket [%d] from [%s] ", packet_number, inet_ntoa(c->ip.ip_src));
 		printf("to [%s] from port [%d] to [%d] \n", inet_ntoa(c->ip.ip_dst),
 				ntohs(c->tcp.th_sport), ntohs(c->tcp.th_dport));
-		printf("Seq [%d] tcp.ack [%d] ", ntohs(c->tcp.th_seq), ntohs(c->tcp.th_ack));
-		printf("len [%d] seq+len [%d] ", c->size_payload, ntohs(c->tcp.th_seq)+c->size_payload);
-		printf("sum [%d] \n", ntohs(c->tcp.th_sum));
+		printf("Seq [%d] tcp.ack [%d] ", ntohl(c->tcp.th_seq), ntohl(c->tcp.th_ack));
+		printf("len [%d] seq+len [%d] ", c->size_payload, ntohl(c->tcp.th_seq)+c->size_payload);
+		printf("sum [%d] \n", ntohl(c->tcp.th_sum));
 		printem(c->payload, c->size_payload);
 		printf("****end of packet ****\n");
 	}
@@ -360,10 +359,9 @@ void print_packet(struct my_packet *root, unsigned int packet_number) {
 // traverse the list and print stuff
 void traverse(struct my_packet *root) {
 	struct my_packet *c = root;
-	struct my_packet *last = root;
 	if (c->next != NULL) {
 		c = c->next;
-#ifdef DEBUGPRINT
+#ifdef DEBUGPRINT1
 		printf("Packet [%d]  Source: %s  ", c->packet_counter, inet_ntoa(c->ip.ip_src));
 		printf("Destination: %s  ", inet_ntoa(c->ip.ip_dst));
 		if (c->ip.ip_p == IPPROTO_TCP) {
@@ -380,34 +378,38 @@ void traverse(struct my_packet *root) {
 		printem(c->payload, c->size_payload);
 
 #endif
-		if (c->size_payload > 0) {
-			if (ntohs(c->tcp.th_sport) == 80 || ntohs(c->tcp.th_dport) == 80) {
+
 #ifdef DEBUGPRINT
 				printf("Packet [%d] tcp.seq [%d] tcp.ack [%d] ", c->packet_counter, ntohl(c->tcp.th_seq),
 						ntohl(c->tcp.th_ack));
 				printf("len [%d] seq+len [%d] ", c->size_payload, (ntohl(c->tcp.th_seq)+c->size_payload));
 				printf("sum [%d] flags [%02x] \n", ntohl(c->tcp.th_sum), c->tcp.th_flags);
-//				if (c->ip.ip_p == IPPROTO_TCP) {
-//					printf("TCP from source [%s] ",inet_ntoa(c->ip.ip_src));
-
-//				printf("ip.len: %d, ip.id: %i, ip.offset: %i", ntohs(c->ip.ip_len), ntohs(c->ip.ip_id), ntohs(c->ip.ip_off));
-
-//				else if (c->ip.ip_p == IPPROTO_UDP)
-//				printf("From port [%i]  To Port [%i]", ntohs(c->udp.uh_sport), ntohs(c->udp.uh_dport));
-
-				if (inet_ntoa(c->ip.ip_src) != inet_ntoa(last->ip.ip_src)) {
-					printf("TCP Communication from source [%s] ",inet_ntoa(c->ip.ip_src));
-					printf("to [%s], from port [%d] to port [%d]:\n",inet_ntoa(c->ip.ip_dst),
-						ntohs(c->tcp.th_sport), ntohs(c->tcp.th_dport));
-				}
 #endif
+		if (c->size_payload > 0) {
+			if (ntohs(c->tcp.th_sport) == 80 || ntohs(c->tcp.th_dport) == 80) {
+//				printf("packet [%d] seq: %d, last_ack: %d c->seq: %d\n", c->packet_counter, ntohl(c->tcp.th_ack), last_ack, c->tcp.th_seq);
+				if (ntohl(c->tcp.th_seq) == last_ack || last_ack == 0) {
+					fprintf(fp,"\nTCP Session - from [%s] ", inet_ntoa(c->ip.ip_src));
+					fprintf(fp,"to [%s], session data: \n", inet_ntoa(c->ip.ip_dst));
+					last_ack = ntohl(c->tcp.th_ack);
+				}
+				printem(c->payload, c->size_payload);
+			}
+			else if (ntohs(c->tcp.th_sport) == 23 || ntohs(c->tcp.th_dport) == 23 ||
+					 ntohs(c->tcp.th_sport) == 992 || ntohs(c->tcp.th_dport) == 992) {
+				// build telnet stream
+			}
+			else if (ntohs(c->tcp.th_sport) == 20 || ntohs(c->tcp.th_dport) == 20 ||
+					 ntohs(c->tcp.th_sport) == 21 || ntohs(c->tcp.th_dport) == 21 ||
+					 ntohs(c->tcp.th_sport) == 47 || ntohs(c->tcp.th_dport) == 47 ||
+					 ntohs(c->tcp.th_sport) == 69 || ntohs(c->tcp.th_dport) == 69 ||
+					 ntohs(c->tcp.th_sport) == 115 || ntohs(c->tcp.th_dport) == 115 ||
+					 ntohs(c->tcp.th_sport) == 989 || ntohs(c->tcp.th_dport) == 989) {
+				// build ftp stream
 			}
 		}
 		traverse(c);
 	}
-}
-void reconstruct(struct my_packet *root, struct data_struct *data) {
-
 }
 void free_list(struct my_packet *root) {
 	struct my_packet *c;
@@ -419,10 +421,10 @@ void free_list(struct my_packet *root) {
 }
 int main(int argc, char *argv[])
 {
+	fp = fopen("hw1_output.txt", "w");
 	struct my_packet *root = (struct my_packet *)malloc( sizeof(struct my_packet));
-	struct data_struct *data = (struct data_struct *)malloc( sizeof(struct data_struct));
-//	root = malloc( sizeof(struct my_packet));
 	initem(root);
+	last_ack = 0;
 
 	char errbuf[PCAP_ERRBUF_SIZE];
 	pcap_t *handle;					// Session handle
@@ -450,12 +452,9 @@ int main(int argc, char *argv[])
 
 	// -1 to loop until error or end, last argument is additional arguments sent to callback(got_packet)
 	pcap_loop(handle, -1, got_packet, root);
-
 	traverse(root);
-	reconstruct(root,data);
 
 	pcap_close(handle);
-
 	free_list(root);
 	printf("Program Complete\n");
 	return 0;
