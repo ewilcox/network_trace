@@ -125,9 +125,7 @@ void print_one(struct my_packet *c) {
 int duplicate (struct my_packet *root, struct my_packet *nu) {
 	struct my_packet *c = root;
 	if (emptylist(c)) return 0;
-	while (c->next == NULL) {
-		print_one(c);
-		print_one(nu);
+	while (c->next != NULL) {
 		if (ntohl(c->tcp.th_seq) == ntohl(nu->tcp.th_seq) && ntohl(c->tcp.th_ack) == ntohl(nu->tcp.th_ack))	return 1;
 		else c = c->next;
 	}
