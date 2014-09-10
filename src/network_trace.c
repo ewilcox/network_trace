@@ -105,7 +105,6 @@ void initem(struct my_packet *root) {	// init root node just in case
 	root->packet_counter = 0;
 	root->size_ip = 0;
 	root->size_payload = 0;
-	root->payload = 0;
 	root->size_tcp = 0;
 	root->next = NULL;
 }
