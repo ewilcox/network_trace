@@ -97,6 +97,11 @@ struct my_packet {		// Struct for storing packet data
 	u_char *payload;
 	struct my_packet *next;
 };
+struct data_struct {
+	unsigned long length;
+	u_char *data;
+	struct data_struct *next;
+};
 void initem(struct my_packet *root) {	// init root node just in case
 	root->header.caplen = 0;
 	root->header.len = 0;
@@ -108,12 +113,50 @@ void initem(struct my_packet *root) {	// init root node just in case
 	root->size_tcp = 0;
 	root->next = NULL;
 }
+int emptylist (struct my_packet *root) {
+	return root->next == NULL;
+}
+// Print data of specific packet number for troubleshooting purposes
+void print_one(struct my_packet *c) {
+	printf("\nPacket [%d] from [%s] ", c->packet_counter, inet_ntoa(c->ip.ip_src));
+	printf("to [%s] from port [%d] to [%d] \n", inet_ntoa(c->ip.ip_dst),
+			ntohs(c->tcp.th_sport), ntohs(c->tcp.th_dport));
+	printf("Seq [%d] tcp.ack [%d] ", ntohs(c->tcp.th_seq), ntohs(c->tcp.th_ack));
+	printf("len [%d] seq+len [%d] ", c->size_payload, ntohs(c->tcp.th_seq)+c->size_payload);
+	printf("sum [%d] \n", ntohs(c->tcp.th_sum));
+}
+// check for duplicate packet
+int duplicate (struct my_packet *root, struct my_packet *nu) {
+	struct my_packet *c = root;
+	if (emptylist(c)) return 0;
+	while (c->next != NULL) {
+		if (ntohl(c->tcp.th_seq) == ntohl(nu->tcp.th_seq) && ntohl(c->tcp.th_ack) == ntohl(nu->tcp.th_ack))	return 1;
+		else c = c->next;
+	}
+	return 0;
+}
 void insert_list(struct my_packet *root, struct my_packet *nu) {
 	//TODO Search for correct place to put packet for reassymbly
 	struct my_packet *c = root;
-	while(c->next != NULL) c = c->next;
-	nu->next = NULL;
-	c->next = nu;
+	unsigned long seq = ntohl(nu->tcp.th_seq);
+	if (!emptylist(root) && ntohl(nu->size_payload > 0)) {
+		while ((ntohl(c->tcp.th_seq) + c->size_payload) != seq && c->next != NULL) {
+			c = c->next;
+		}
+		if (c->next == NULL) {
+			nu->next = NULL;
+			c->next = nu;
+		}
+		else {
+			nu->next = c->next;
+			c->next = nu;
+		}
+	}
+	else {
+		while (c->next != NULL) c = c->next;
+		nu->next = NULL;
+		c->next = nu;
+	}
 }
 // Called from print_payload, print in rows of 16 bytes:  offset  hex  ascii
 // 00000   47 45 54 20 2f 20 48 54  54 50 2f 31 2e 31 0d 0a   GET / HTTP/1.1..
@@ -296,10 +339,7 @@ void got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *pa
 	nu->payload = malloc(size_payload);
 	if (size_payload > 0) strcpy(nu->payload, payload);
 	nu->size_payload = size_payload;
-	insert_list(root,nu);
-}
-int getcrc(struct my_packet *c) {
-	return (ntohs(c->ip.ip_src.s_addr) + ntohs(c->ip.ip_dst.s_addr) + IPPROTO_TCP + sizeof(c->tcp));
+	if (!duplicate(root,nu)) insert_list(root,nu);
 }
 // Print data of specific packet number for troubleshooting purposes
 void print_packet(struct my_packet *root, unsigned int packet_number) {
@@ -307,8 +347,8 @@ void print_packet(struct my_packet *root, unsigned int packet_number) {
 	while ((c->next != NULL) && (c->packet_counter != packet_number)) c = c->next;
 	if (c->packet_counter == packet_number) {
 		printf("\nPacket [%d] from [%s] ", packet_number, inet_ntoa(c->ip.ip_src));
-		printf("to [%s] from port [%d] to [%d] calculated crc [%d]\n", inet_ntoa(c->ip.ip_dst),
-				ntohs(c->tcp.th_sport), ntohs(c->tcp.th_dport), getcrc(c));
+		printf("to [%s] from port [%d] to [%d] \n", inet_ntoa(c->ip.ip_dst),
+				ntohs(c->tcp.th_sport), ntohs(c->tcp.th_dport));
 		printf("Seq [%d] tcp.ack [%d] ", ntohs(c->tcp.th_seq), ntohs(c->tcp.th_ack));
 		printf("len [%d] seq+len [%d] ", c->size_payload, ntohs(c->tcp.th_seq)+c->size_payload);
 		printf("sum [%d] \n", ntohs(c->tcp.th_sum));
@@ -316,7 +356,8 @@ void print_packet(struct my_packet *root, unsigned int packet_number) {
 		printf("****end of packet ****\n");
 	}
 }
-void traverse(struct my_packet *root) {		// traverse the list and print stuff
+// traverse the list and print stuff
+void traverse(struct my_packet *root) {
 	struct my_packet *c = root;
 	struct my_packet *last = root;
 	if (c->next != NULL) {
@@ -336,23 +377,36 @@ void traverse(struct my_packet *root) {		// traverse the list and print stuff
 		printf(" tcp.flags[%d] tcp.off [%d] packet_size [%d]", ntohs(c->tcp.th_flags), ntohs(c->tcp.th_offx2), c->size_payload);
 		printf("\n");
 		printem(c->payload, c->size_payload);
+
 #endif
 		if (c->size_payload > 0) {
 			if (ntohs(c->tcp.th_sport) == 80 || ntohs(c->tcp.th_dport) == 80) {
-				printf("packet [%d] tcp.seq [%d] tcp.ack [%d] ", c->packet_counter, ntohs(c->tcp.th_seq),
-						ntohs(c->tcp.th_ack));
-				printf("len [%d] seq+len [%d] ", c->size_payload, ntohs(c->tcp.th_seq)+c->size_payload);
-				printf("sum [%d] flags [%02x] \n", ntohs(c->tcp.th_sum), c->tcp.th_flags);
+#ifdef DEBUGPRINT
+				printf("Packet [%d] tcp.seq [%d] tcp.ack [%d] ", c->packet_counter, ntohl(c->tcp.th_seq),
+						ntohl(c->tcp.th_ack));
+				printf("len [%d] seq+len [%d] ", c->size_payload, (ntohl(c->tcp.th_seq)+c->size_payload));
+				printf("sum [%d] flags [%02x] \n", ntohl(c->tcp.th_sum), c->tcp.th_flags);
+//				if (c->ip.ip_p == IPPROTO_TCP) {
+//					printf("TCP from source [%s] ",inet_ntoa(c->ip.ip_src));
+
+//				printf("ip.len: %d, ip.id: %i, ip.offset: %i", ntohs(c->ip.ip_len), ntohs(c->ip.ip_id), ntohs(c->ip.ip_off));
+
+//				else if (c->ip.ip_p == IPPROTO_UDP)
+//				printf("From port [%i]  To Port [%i]", ntohs(c->udp.uh_sport), ntohs(c->udp.uh_dport));
 
 				if (inet_ntoa(c->ip.ip_src) != inet_ntoa(last->ip.ip_src)) {
 					printf("TCP Communication from source [%s] ",inet_ntoa(c->ip.ip_src));
 					printf("to [%s], from port [%d] to port [%d]:\n",inet_ntoa(c->ip.ip_dst),
 						ntohs(c->tcp.th_sport), ntohs(c->tcp.th_dport));
 				}
+#endif
 			}
 		}
 		traverse(c);
 	}
+}
+void reconstruct(struct my_packet *root, struct data_struct *data) {
+
 }
 void free_list(struct my_packet *root) {
 	struct my_packet *c;
@@ -365,6 +419,7 @@ void free_list(struct my_packet *root) {
 int main(int argc, char *argv[])
 {
 	struct my_packet *root = (struct my_packet *)malloc( sizeof(struct my_packet));
+	struct data_struct *data = (struct data_struct *)malloc( sizeof(struct data_struct));
 //	root = malloc( sizeof(struct my_packet));
 	initem(root);
 
@@ -396,9 +451,7 @@ int main(int argc, char *argv[])
 	pcap_loop(handle, -1, got_packet, root);
 
 	traverse(root);
-
-	print_packet(root,34);
-	print_packet(root,38);
+	reconstruct(root,data);
 
 	pcap_close(handle);
 
