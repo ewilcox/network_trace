@@ -97,6 +97,11 @@ struct my_packet {		// Struct for storing packet data
 	u_char *payload;
 	struct my_packet *next;
 };
+struct data_struct {
+	unsigned long length;
+	u_char *data;
+	struct data_struct *next;
+};
 void initem(struct my_packet *root) {	// init root node just in case
 	root->header.caplen = 0;
 	root->header.len = 0;
@@ -352,7 +357,8 @@ void print_packet(struct my_packet *root, unsigned int packet_number) {
 		printf("****end of packet ****\n");
 	}
 }
-void traverse(struct my_packet *root) {		// traverse the list and print stuff
+// traverse the list and print stuff
+void traverse(struct my_packet *root) {
 	struct my_packet *c = root;
 	struct my_packet *last = root;
 	if (c->next != NULL) {
@@ -372,23 +378,36 @@ void traverse(struct my_packet *root) {		// traverse the list and print stuff
 		printf(" tcp.flags[%d] tcp.off [%d] packet_size [%d]", ntohs(c->tcp.th_flags), ntohs(c->tcp.th_offx2), c->size_payload);
 		printf("\n");
 		printem(c->payload, c->size_payload);
+
 #endif
 		if (c->size_payload > 0) {
 			if (ntohs(c->tcp.th_sport) == 80 || ntohs(c->tcp.th_dport) == 80) {
-				printf("packet [%d] tcp.seq [%d] tcp.ack [%d] ", c->packet_counter, ntohl(c->tcp.th_seq),
+#ifdef DEBUGPRINT
+				printf("Packet [%d] tcp.seq [%d] tcp.ack [%d] ", c->packet_counter, ntohl(c->tcp.th_seq),
 						ntohl(c->tcp.th_ack));
 				printf("len [%d] seq+len [%d] ", c->size_payload, (ntohl(c->tcp.th_seq)+c->size_payload));
 				printf("sum [%d] flags [%02x] \n", ntohl(c->tcp.th_sum), c->tcp.th_flags);
+//				if (c->ip.ip_p == IPPROTO_TCP) {
+//					printf("TCP from source [%s] ",inet_ntoa(c->ip.ip_src));
+
+//				printf("ip.len: %d, ip.id: %i, ip.offset: %i", ntohs(c->ip.ip_len), ntohs(c->ip.ip_id), ntohs(c->ip.ip_off));
+
+//				else if (c->ip.ip_p == IPPROTO_UDP)
+//				printf("From port [%i]  To Port [%i]", ntohs(c->udp.uh_sport), ntohs(c->udp.uh_dport));
 
 				if (inet_ntoa(c->ip.ip_src) != inet_ntoa(last->ip.ip_src)) {
 					printf("TCP Communication from source [%s] ",inet_ntoa(c->ip.ip_src));
 					printf("to [%s], from port [%d] to port [%d]:\n",inet_ntoa(c->ip.ip_dst),
 						ntohs(c->tcp.th_sport), ntohs(c->tcp.th_dport));
 				}
+#endif
 			}
 		}
 		traverse(c);
 	}
+}
+void reconstruct(struct my_packet *root, struct data_struct *data) {
+
 }
 void free_list(struct my_packet *root) {
 	struct my_packet *c;
@@ -401,6 +420,7 @@ void free_list(struct my_packet *root) {
 int main(int argc, char *argv[])
 {
 	struct my_packet *root = (struct my_packet *)malloc( sizeof(struct my_packet));
+	struct data_struct *data = (struct data_struct *)malloc( sizeof(struct data_struct));
 //	root = malloc( sizeof(struct my_packet));
 	initem(root);
 
@@ -432,16 +452,7 @@ int main(int argc, char *argv[])
 	pcap_loop(handle, -1, got_packet, root);
 
 	traverse(root);
-
-//	print_packet(root,4);
-//	print_packet(root,6);
-//	print_packet(root,8);
-//	print_packet(root,10);
-//	print_packet(root,11);
-//	print_packet(root,14);
-//	print_packet(root,16);
-//	print_packet(root,18);
-//	print_packet(root,20);
+	reconstruct(root,data);
 
 	pcap_close(handle);
 
